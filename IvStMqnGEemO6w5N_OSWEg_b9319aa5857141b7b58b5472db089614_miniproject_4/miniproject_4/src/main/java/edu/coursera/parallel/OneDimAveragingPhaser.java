@@ -111,5 +111,50 @@ public final class OneDimAveragingPhaser {
             final double[] myNew, final double[] myVal, final int n,
             final int tasks) {
 
+        Phaser[] phs = new Phaser[tasks];
+        for (int i = 0; i < tasks; i++) {
+            phs[i] = new Phaser(1);
+        }   // Phaser for each index
+
+        Thread[] threads = new Thread[tasks];
+
+        for (int ii = 0; ii < tasks; ii++) {
+            final int i = ii;
+
+            threads[ii] = new Thread(() -> {
+                double[] threadPrivateMyVal = myVal;
+                double[] threadPrivateMyNew = myNew;
+
+                final int chunkSize = (n + tasks - 1) / tasks;
+                final int left = (i * chunkSize) + 1;
+                int right = (left + chunkSize) - 1;
+                if (right > n) right = n;
+
+                for (int iter = 0; iter < iterations; iter++) {
+                    for (int j = left; j <= right; j++) {
+                        threadPrivateMyNew[j] = (threadPrivateMyVal[j - 1]
+                                + threadPrivateMyVal[j + 1]) / 2.0;
+                    }
+
+                    // Improved barrier
+                    phs[i].arrive(); // signal current arrives
+                    if (i > 0) phs[i-1].awaitAdvance(iter); // wait top-left
+                    if (i < tasks-1) phs[i+1].awaitAdvance(iter); // wait top-right
+
+                    double[] temp = threadPrivateMyNew;
+                    threadPrivateMyNew = threadPrivateMyVal;
+                    threadPrivateMyVal = temp;
+                }
+            });
+            threads[ii].start();
+        }
+
+        for (int ii = 0; ii < tasks; ii++) {
+            try {
+                threads[ii].join();
+            } catch (InterruptedException e) {
+                e.printStackTrace();
+            }
+        }
     }
 }
